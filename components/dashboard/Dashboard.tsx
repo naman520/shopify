@@ -10,8 +10,8 @@ import { StateOrdersTable } from "./StateOrdersTable";
 import { CampaignOrdersTable } from "./CampaignOrdersTable";
 import { SettingsModal } from "./SettingsModal";
 import { ShopifyProductItem, OrdersApiResponse, ProductsApiResponse } from "@/types/shopify";
-import { formatDateInputValue, formatDateDisplay } from "@/lib/formatters";
-import { AlertTriangle, RefreshCw, KeyRound } from "lucide-react";
+import { formatDateInputValue, formatDateDisplay, formatNumber } from "@/lib/formatters";
+import { AlertTriangle, RefreshCw, KeyRound, MapPin, Megaphone } from "lucide-react";
 
 
 export const Dashboard: React.FC = () => {
@@ -23,7 +23,10 @@ export const Dashboard: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [activePreset, setActivePreset] = useState<"today" | "7" | "30" | "month" | "custom">("30");
+  const [activePreset, setActivePreset] = useState<
+    "today" | "yesterday" | "7" | "30" | "month" | "custom"
+  >("30");
+  const [activeTab, setActiveTab] = useState<"states" | "campaigns">("states");
 
   // Analytics state
   const [analytics, setAnalytics] = useState<OrdersApiResponse | null>(null);
@@ -192,7 +195,7 @@ export const Dashboard: React.FC = () => {
 
   // Handle Quick Range Preset select with instant fetch
   const handlePresetSelect = (
-    preset: "today" | "7" | "30" | "month",
+    preset: "today" | "yesterday" | "7" | "30" | "month",
     newStart: string,
     newEnd: string
   ) => {
@@ -329,8 +332,18 @@ export const Dashboard: React.FC = () => {
                 </span>
               </div>
               {analytics?.totalCount !== undefined && (
-                <span className="text-slate-400">
-                  {analytics.totalCount} Shopify {analytics.totalCount === 1 ? "order" : "orders"} analyzed
+                <span
+                  className={
+                    analytics.truncated ? "text-amber-700 font-semibold" : "text-slate-400"
+                  }
+                >
+                  {analytics.truncated && analytics.totalAvailable
+                    ? `Analysed newest ${formatNumber(analytics.totalCount)} of ${formatNumber(
+                        analytics.totalAvailable
+                      )} orders — narrow the range for exact totals`
+                    : `${formatNumber(analytics.totalCount)} Shopify ${
+                        analytics.totalCount === 1 ? "order" : "orders"
+                      } analysed`}
                 </span>
               )}
             </div>
@@ -341,26 +354,69 @@ export const Dashboard: React.FC = () => {
         <section>
           <StatsCards
             summary={analytics?.summary || null}
+            attributedOrders={analytics?.summary?.attributedOrders}
             loading={loading}
           />
         </section>
 
-        {/* State-wise Orders Table */}
+        {/* Breakdown tables, switched by tab so neither one buries the other */}
         <section>
-          <StateOrdersTable
-            states={analytics?.states || []}
-            currency={analytics?.summary?.currency || "INR"}
-            loading={loading}
-          />
-        </section>
+          <div
+            role="tablist"
+            aria-label="Breakdown view"
+            className="flex items-center gap-1 mb-4 bg-slate-100 p-1 rounded-xl w-full sm:w-auto sm:inline-flex"
+          >
+            <button
+              role="tab"
+              aria-selected={activeTab === "states"}
+              onClick={() => setActiveTab("states")}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                activeTab === "states"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <MapPin className="h-4 w-4" />
+              <span>By State</span>
+              {analytics?.states?.length ? (
+                <span className="text-xs font-medium text-slate-400">
+                  ({analytics.states.length})
+                </span>
+              ) : null}
+            </button>
+            <button
+              role="tab"
+              aria-selected={activeTab === "campaigns"}
+              onClick={() => setActiveTab("campaigns")}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                activeTab === "campaigns"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Megaphone className="h-4 w-4" />
+              <span>By Campaign</span>
+              {analytics?.campaigns?.length ? (
+                <span className="text-xs font-medium text-slate-400">
+                  ({analytics.campaigns.length})
+                </span>
+              ) : null}
+            </button>
+          </div>
 
-        {/* Campaign-wise Orders Table */}
-        <section>
-          <CampaignOrdersTable
-            campaigns={analytics?.campaigns || []}
-            currency={analytics?.summary?.currency || "INR"}
-            loading={loading}
-          />
+          {activeTab === "states" ? (
+            <StateOrdersTable
+              states={analytics?.states || []}
+              currency={analytics?.summary?.currency || "INR"}
+              loading={loading}
+            />
+          ) : (
+            <CampaignOrdersTable
+              campaigns={analytics?.campaigns || []}
+              currency={analytics?.summary?.currency || "INR"}
+              loading={loading}
+            />
+          )}
         </section>
       </main>
 

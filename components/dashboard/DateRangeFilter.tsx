@@ -5,12 +5,16 @@ import { formatDateInputValue } from "@/lib/formatters";
 interface DateRangeFilterProps {
   startDate: string;
   endDate: string;
-  activePreset?: "today" | "7" | "30" | "month" | "custom";
+  activePreset?: "today" | "yesterday" | "7" | "30" | "month" | "custom";
   onStartDateChange: (val: string) => void;
   onEndDateChange: (val: string) => void;
   onApply: () => void;
   onReset: () => void;
-  onSelectPreset?: (preset: "today" | "7" | "30" | "month", start: string, end: string) => void;
+  onSelectPreset?: (
+    preset: "today" | "yesterday" | "7" | "30" | "month",
+    start: string,
+    end: string
+  ) => void;
   loading?: boolean;
 }
 
@@ -29,11 +33,17 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   const endTodayStr = formatDateInputValue(today);
 
   // Compute preset dates
-  const handlePresetClick = (preset: "today" | "7" | "30" | "month") => {
+  const handlePresetClick = (preset: "today" | "yesterday" | "7" | "30" | "month") => {
     let startStr = endTodayStr;
+    let endStr = endTodayStr;
 
     if (preset === "today") {
       startStr = endTodayStr;
+    } else if (preset === "yesterday") {
+      const d = new Date();
+      d.setDate(today.getDate() - 1);
+      startStr = formatDateInputValue(d);
+      endStr = startStr;
     } else if (preset === "month") {
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
       startStr = formatDateInputValue(firstDay);
@@ -48,9 +58,9 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     }
 
     onStartDateChange(startStr);
-    onEndDateChange(endTodayStr);
+    onEndDateChange(endStr);
     if (onSelectPreset) {
-      onSelectPreset(preset, startStr, endTodayStr);
+      onSelectPreset(preset, startStr, endStr);
     }
   };
 
@@ -149,6 +159,17 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
           }`}
         >
           Today
+        </button>
+        <button
+          type="button"
+          onClick={() => handlePresetClick("yesterday")}
+          className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+            activePreset === "yesterday"
+              ? "bg-emerald-600 text-white shadow-sm font-semibold"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+          }`}
+        >
+          Yesterday
         </button>
         <button
           type="button"

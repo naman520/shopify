@@ -1,18 +1,23 @@
 import React from "react";
-import { ShoppingBag, Package, IndianRupee, MapPin } from "lucide-react";
+import { ShoppingBag, Package, IndianRupee, MapPin, Receipt, Megaphone } from "lucide-react";
 import { AnalyticsSummary } from "@/types/shopify";
 import { formatCurrency, formatNumber } from "@/lib/formatters";
 
 interface StatsCardsProps {
   summary: AnalyticsSummary | null;
+  attributedOrders?: number;
   loading?: boolean;
 }
 
-export const StatsCards: React.FC<StatsCardsProps> = ({ summary, loading = false }) => {
+export const StatsCards: React.FC<StatsCardsProps> = ({
+  summary,
+  attributedOrders,
+  loading = false,
+}) => {
   if (loading || !summary) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div
             key={i}
             className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-pulse flex flex-col justify-between h-32"
@@ -27,6 +32,13 @@ export const StatsCards: React.FC<StatsCardsProps> = ({ summary, loading = false
       </div>
     );
   }
+
+  const averageOrderValue =
+    summary.totalOrders > 0 ? summary.totalRevenue / summary.totalOrders : 0;
+  const attributionRate =
+    summary.totalOrders > 0 && attributedOrders !== undefined
+      ? (attributedOrders / summary.totalOrders) * 100
+      : undefined;
 
   const cards = [
     {
@@ -57,6 +69,27 @@ export const StatsCards: React.FC<StatsCardsProps> = ({ summary, loading = false
       ringColor: "ring-emerald-500/10",
     },
     {
+      title: "Avg Order Value",
+      value: formatCurrency(averageOrderValue, summary.currency),
+      subtitle: "Revenue per order",
+      icon: Receipt,
+      color: "text-violet-600",
+      bgColor: "bg-violet-50",
+      ringColor: "ring-violet-500/10",
+    },
+    {
+      title: "Campaign Tagged",
+      value: attributionRate !== undefined ? `${attributionRate.toFixed(1)}%` : "—",
+      subtitle:
+        attributedOrders !== undefined
+          ? `${formatNumber(attributedOrders)} orders carry a campaign ID`
+          : "Awaiting campaign data",
+      icon: Megaphone,
+      color: "text-rose-600",
+      bgColor: "bg-rose-50",
+      ringColor: "ring-rose-500/10",
+    },
+    {
       title: "Top State",
       value: summary.topState || "N/A",
       subtitle: summary.topStateUnits
@@ -70,7 +103,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({ summary, loading = false
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {cards.map((card, index) => {
         const Icon = card.icon;
         return (

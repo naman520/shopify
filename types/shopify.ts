@@ -141,6 +141,7 @@ export interface CampaignAnalytics {
 
 export interface AnalyticsSummary {
   totalOrders: number;
+  attributedOrders?: number;
   totalUnits: number;
   totalRevenue: number;
   currency: string;

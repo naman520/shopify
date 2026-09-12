@@ -442,10 +442,15 @@ export function calculateStateAnalytics(
   }));
   runningProducts.sort((a, b) => b.orderCount - a.orderCount || b.revenue - a.revenue);
 
+  const attributedOrders = campaigns
+    .filter((c) => c.campaign !== NO_CAMPAIGN_LABEL)
+    .reduce((acc, c) => acc + c.orders, 0);
+
   const topStateItem = states.length > 0 ? states[0] : null;
 
   const summary: AnalyticsSummary = {
     totalOrders: overallOrderIds.size,
+    attributedOrders,
     totalUnits: overallUnits,
     totalRevenue: Math.round(overallRevenue * 100) / 100,
     currency: detectedCurrency,
@@ -646,6 +651,7 @@ export function getSampleAnalytics(selectedProductTitle: string = "All Products"
   return {
     summary: {
       totalOrders,
+      attributedOrders: 667,
       totalUnits,
       totalRevenue,
       currency: "INR",
