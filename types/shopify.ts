@@ -36,25 +36,6 @@ export interface ShopifyShippingAddress {
   zip?: string | null;
 }
 
-export interface ShopifyUtmParameters {
-  campaign?: string | null;
-  source?: string | null;
-  medium?: string | null;
-  content?: string | null;
-  term?: string | null;
-}
-
-export interface ShopifyCustomerVisit {
-  source?: string | null;
-  sourceType?: string | null;
-  utmParameters?: ShopifyUtmParameters | null;
-}
-
-export interface ShopifyCustomerJourneySummary {
-  firstVisit?: ShopifyCustomerVisit | null;
-  lastVisit?: ShopifyCustomerVisit | null;
-}
-
 export interface ShopifyOrderAttribute {
   key: string;
   value?: string | null;
@@ -71,7 +52,6 @@ export interface ShopifyOrderNode {
   };
   shippingAddress?: ShopifyShippingAddress | null;
   customAttributes?: ShopifyOrderAttribute[] | null;
-  customerJourneySummary?: ShopifyCustomerJourneySummary | null;
   lineItems: {
     nodes: ShopifyLineItemNode[];
   };
@@ -184,6 +164,9 @@ export interface OrdersApiResponse {
   campaigns?: CampaignAnalytics[];
   isConfigured?: boolean;
   totalCount?: number;
+  totalAvailable?: number;
+  truncated?: boolean;
+  maxOrders?: number;
   error?: string;
 }
 

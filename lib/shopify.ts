@@ -169,6 +169,32 @@ export async function getShopifyConfig() {
   };
 }
 
+const MAX_THROTTLE_RETRIES = 5;
+
+function isThrottledError(errors: any[]): boolean {
+  return errors.some(
+    (e: any) =>
+      e?.extensions?.code === "THROTTLED" ||
+      e?.message?.toLowerCase().includes("throttled")
+  );
+}
+
+function isTokenError(errors: any[]): boolean {
+  return errors.some(
+    (e: any) =>
+      e?.message?.toLowerCase().includes("access token") ||
+      e?.message?.toLowerCase().includes("unauthorized")
+  );
+}
+
+/**
+ * Runs a GraphQL request, transparently recovering from the two failures that are
+ * expected in normal operation: an expired access token, and cost-based throttling.
+ *
+ * Shopify charges the *requested* query cost against a leaky bucket and answers
+ * HTTP 200 with a "Throttled" error when the bucket is empty, so long paginated
+ * crawls must wait for the bucket to refill rather than treat it as fatal.
+ */
 export async function shopifyFetch<T>({
   query,
   variables = {},
@@ -177,82 +203,62 @@ export async function shopifyFetch<T>({
   variables?: Record<string, any>;
 }): Promise<T> {
   const config = await getShopifyConfig();
+  let accessToken = config.token;
 
-  const runFetch = async (accessToken: string) => {
-    return fetch(config.endpoint, {
+  const runFetch = async (token: string) =>
+    fetch(config.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Shopify-Access-Token": accessToken,
+        "X-Shopify-Access-Token": token,
       },
-      body: JSON.stringify({
-        query,
-        variables,
-      }),
+      body: JSON.stringify({ query, variables }),
       cache: "no-store",
     });
-  };
 
-  let response = await runFetch(config.token);
+  for (let attempt = 0; ; attempt++) {
+    let response = await runFetch(accessToken);
 
-  // If token is expired (401 Unauthorized) and we have client credentials, refresh token and retry
-  if (response.status === 401 && config.clientId && config.clientSecret) {
-    console.log("Access token expired (401). Refreshing token using Client Credentials...");
-    try {
-      const freshToken = await refreshAccessToken(
-        config.domain,
-        config.clientId,
-        config.clientSecret
+    // Expired token: exchange a fresh one via client credentials and retry once.
+    if (response.status === 401 && config.clientId && config.clientSecret) {
+      accessToken = await refreshAccessToken(config.domain, config.clientId, config.clientSecret);
+      response = await runFetch(accessToken);
+    }
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      throw new ShopifyApiError(
+        `Shopify Admin API HTTP error ${response.status}: ${response.statusText}`,
+        [{ message: errorBody }],
+        response.status
       );
-      response = await runFetch(freshToken);
-    } catch (refreshErr) {
-      console.error("Token refresh failed during fetch retry:", refreshErr);
     }
-  }
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
+    const result = await response.json();
+    const errors: any[] = result.errors || [];
+
+    if (errors.length === 0) {
+      return result.data as T;
+    }
+
+    if (isThrottledError(errors) && attempt < MAX_THROTTLE_RETRIES) {
+      const available = result.extensions?.cost?.throttleStatus?.currentlyAvailable ?? 0;
+      const restoreRate = result.extensions?.cost?.throttleStatus?.restoreRate || 100;
+      const needed = result.extensions?.cost?.requestedQueryCost ?? 100;
+      const secondsToRefill = Math.max(0, (needed - available) / restoreRate);
+      const waitMs = Math.min(10000, Math.ceil(secondsToRefill * 1000) + 250 * (attempt + 1));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    }
+
+    if (isTokenError(errors) && config.clientId && config.clientSecret && attempt === 0) {
+      accessToken = await refreshAccessToken(config.domain, config.clientId, config.clientSecret);
+      continue;
+    }
+
     throw new ShopifyApiError(
-      `Shopify Admin API HTTP error ${response.status}: ${response.statusText}`,
-      [{ message: errorBody }],
-      response.status
+      `Shopify GraphQL Error: ${errors.map((e: any) => e.message).join(", ")}`,
+      errors
     );
   }
-
-  const result = await response.json();
-
-  if (result.errors && result.errors.length > 0) {
-    const errorMsg = result.errors.map((e: any) => e.message).join(", ");
-    
-    // Check if GraphQL error is related to invalid access token and try refreshing
-    const isTokenError = result.errors.some(
-      (e: any) =>
-        e.message?.toLowerCase().includes("access token") ||
-        e.message?.toLowerCase().includes("unauthorized")
-    );
-
-    if (isTokenError && config.clientId && config.clientSecret) {
-      console.log("GraphQL reported token issue. Refreshing token...");
-      try {
-        const freshToken = await refreshAccessToken(
-          config.domain,
-          config.clientId,
-          config.clientSecret
-        );
-        const retryResponse = await runFetch(freshToken);
-        if (retryResponse.ok) {
-          const retryResult = await retryResponse.json();
-          if (!retryResult.errors || retryResult.errors.length === 0) {
-            return retryResult.data as T;
-          }
-        }
-      } catch (refreshErr) {
-        console.error("Token refresh failed during GraphQL retry:", refreshErr);
-      }
-    }
-
-    throw new ShopifyApiError(`Shopify GraphQL Error: ${errorMsg}`, result.errors);
-  }
-
-  return result.data as T;
 }

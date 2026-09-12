@@ -24,20 +24,14 @@ function getOrderAttribute(order: ShopifyOrderNode, keys: string[]): string | un
 /**
  * Resolves the ad campaign ID for an order.
  *
- * Order-level custom attributes take priority: COD form apps (EasySell etc.) create orders
- * through the API, so Shopify records no storefront visit and customerJourneySummary stays
- * empty — the ad platform's UTM values are written onto the order as attributes instead.
- * Native web-checkout orders fall back to the customer journey's UTM parameters.
+ * The value lives in the order's custom attributes: COD form apps (EasySell etc.) create
+ * orders through the API, so Shopify records no storefront visit to attribute and copies
+ * the landing page's UTM parameters onto the order instead.
  */
 function getOrderCampaignId(order: ShopifyOrderNode): string {
-  const fromAttributes = getOrderAttribute(order, ["utm_campaign", "utm_id", "campaign_id"]);
-  if (fromAttributes) return fromAttributes;
-
-  const journey = order.customerJourneySummary;
-  const visit = journey?.lastVisit?.utmParameters ? journey.lastVisit : journey?.firstVisit;
-  const fromJourney = visit?.utmParameters?.campaign?.trim();
-
-  return fromJourney || NO_CAMPAIGN_LABEL;
+  return (
+    getOrderAttribute(order, ["utm_campaign", "utm_id", "campaign_id"]) || NO_CAMPAIGN_LABEL
+  );
 }
 
 // Standard mapping of Indian State / UT codes and common spellings to canonical names

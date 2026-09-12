@@ -13,9 +13,27 @@ export const GET_PRODUCTS_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * Total order count for a date range, used to tell the user when the analysed
+ * set had to be capped (one cheap call instead of crawling every page).
+ */
+export const GET_ORDERS_COUNT_QUERY = /* GraphQL */ `
+  query GetOrdersCount($query: String) {
+    ordersCount(query: $query) {
+      count
+      precision
+    }
+  }
+`;
+
+/**
+ * Newest orders first, so a capped result set still reflects recent activity.
+ * Page size and lineItems depth are tuned for Shopify's cost budget: the API bills the
+ * *requested* cost, so over-asking for line items throttles long date ranges.
+ */
 export const GET_ORDERS_QUERY = /* GraphQL */ `
   query GetOrders($cursor: String, $query: String) {
-    orders(first: 100, after: $cursor, query: $query) {
+    orders(first: 250, after: $cursor, query: $query, sortKey: CREATED_AT, reverse: true) {
       pageInfo {
         hasNextPage
         endCursor
@@ -43,31 +61,7 @@ export const GET_ORDERS_QUERY = /* GraphQL */ `
           key
           value
         }
-        customerJourneySummary {
-          firstVisit {
-            source
-            sourceType
-            utmParameters {
-              campaign
-              source
-              medium
-              content
-              term
-            }
-          }
-          lastVisit {
-            source
-            sourceType
-            utmParameters {
-              campaign
-              source
-              medium
-              content
-              term
-            }
-          }
-        }
-        lineItems(first: 100) {
+        lineItems(first: 10) {
           nodes {
             title
             quantity
