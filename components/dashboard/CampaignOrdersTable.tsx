@@ -9,6 +9,7 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  X,
   MapPin,
 } from "lucide-react";
 import { CampaignAnalytics } from "@/types/shopify";
@@ -50,12 +51,33 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
     }
   };
 
-  // Filter campaigns by search query
+  const searchTerms = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          searchTerm
+            .split(/[\n,;]+/)
+            .map((term) => term.trim().toLowerCase())
+            .filter(Boolean)
+        )
+      ),
+    [searchTerm]
+  );
+
+  const hasSearch = searchTerms.length > 0;
+  const isBulkSearch = searchTerms.length > 1;
+
+  // Match any entered campaign ID. A single value keeps the original partial-search behavior.
   const filteredCampaigns = useMemo(() => {
-    if (!searchTerm.trim()) return campaigns;
-    const term = searchTerm.toLowerCase().trim();
-    return campaigns.filter((c) => c.campaign.toLowerCase().includes(term));
-  }, [campaigns, searchTerm]);
+    if (!hasSearch) return campaigns;
+
+    return campaigns.filter((campaign) => {
+      const campaignId = campaign.campaign.toLowerCase();
+      return searchTerms.some((term) =>
+        isBulkSearch ? campaignId === term : campaignId.includes(term)
+      );
+    });
+  }, [campaigns, hasSearch, isBulkSearch, searchTerms]);
 
   // Sort campaigns
   const sortedCampaigns = useMemo(() => {
@@ -110,6 +132,7 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
             <span>Campaign-wise Breakdown</span>
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
               {filteredCampaigns.length} {filteredCampaigns.length === 1 ? "campaign" : "campaigns"}
+              {hasSearch && ` of ${campaigns.length}`}
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -117,18 +140,40 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
           </p>
         </div>
 
-        {/* Search input */}
-        <div className="w-full sm:w-64 relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <Search className="h-4 w-4" />
+        {/* Single and bulk campaign search */}
+        <div className="w-full sm:w-80">
+          <div className="relative">
+            <div className="absolute left-0 top-0 pl-3 pt-2.5 pointer-events-none text-slate-400">
+              <Search className="h-4 w-4" aria-hidden="true" />
+            </div>
+            <textarea
+              rows={2}
+              aria-label="Search one or more campaign IDs"
+              placeholder="Search or paste campaign IDs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="block min-h-10 max-h-28 w-full resize-y rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-9 text-sm leading-5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                aria-label="Clear campaign search"
+                title="Clear search"
+                className="absolute right-2 top-2 rounded p-0.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
-          <input
-            type="text"
-            placeholder="Search campaign ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 shadow-sm"
-          />
+          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <span>Separate IDs with commas, semicolons, or new lines</span>
+            {isBulkSearch && (
+              <span className="shrink-0 font-medium text-emerald-700">
+                {searchTerms.length} IDs entered
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -142,11 +187,13 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
             <Inbox className="h-6 w-6" />
           </div>
           <h3 className="text-sm font-semibold text-slate-900 mb-1">
-            {searchTerm ? "No matching campaigns" : "No campaign data found"}
+            {hasSearch ? "No matching campaigns" : "No campaign data found"}
           </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {searchTerm
-              ? `No campaigns matching "${searchTerm}". Try checking the ID or clear your search.`
+            {hasSearch
+              ? isBulkSearch
+                ? `No campaigns matched any of the ${searchTerms.length} IDs entered. Try checking the IDs or clear your search.`
+                : `No campaigns matching "${searchTerms[0]}". Try checking the ID or clear your search.`
               : "No campaign-tagged orders found for the selected product and date range. Make sure your ad links pass utm_campaign / utm_id so they get saved onto the order."}
           </p>
         </div>
