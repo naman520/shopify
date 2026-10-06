@@ -168,6 +168,8 @@ export interface OrdersApiResponse {
   totalAvailable?: number;
   truncated?: boolean;
   maxOrders?: number;
+  fetchedAt?: number;
+  syncMode?: "cache" | "incremental" | "full";
   error?: string;
 }
 

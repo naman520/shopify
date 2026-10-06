@@ -31,6 +31,7 @@ export const Dashboard: React.FC = () => {
   // Analytics state
   const [analytics, setAnalytics] = useState<OrdersApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [isConfigured, setIsConfigured] = useState<boolean>(true);
   const [storeDomain, setStoreDomain] = useState<string>("");
@@ -88,18 +89,28 @@ export const Dashboard: React.FC = () => {
 
   // Fetch orders analytics function with race-condition prevention
   const fetchAnalytics = useCallback(
-    async (prodId: string, start: string, end: string) => {
+    async (
+      prodId: string,
+      start: string,
+      end: string,
+      options: { refresh?: "latest" | "full"; background?: boolean } = {}
+    ) => {
       const currentRequestId = ++activeRequestId.current;
       try {
-        setLoading(true);
+        if (options.background) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
         setError("");
 
         const params = new URLSearchParams();
         if (prodId) params.set("productId", prodId);
         if (start) params.set("startDate", start);
         if (end) params.set("endDate", end);
+        if (options.refresh) params.set("refresh", options.refresh);
 
-        const res = await fetch(`/api/orders?${params.toString()}`);
+        const res = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
         const data: OrdersApiResponse = await res.json();
 
         // If a newer request was dispatched while this was in-flight, discard this response
@@ -138,6 +149,7 @@ export const Dashboard: React.FC = () => {
       } finally {
         if (currentRequestId === activeRequestId.current) {
           setLoading(false);
+          setRefreshing(false);
         }
       }
     },
@@ -168,6 +180,23 @@ export const Dashboard: React.FC = () => {
 
     fetchAnalytics("all", initialStart, initialEnd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pull only orders newer than the current cache once per minute. Pausing while
+  // the tab is hidden avoids spending Shopify API budget when nobody is viewing it.
+  useEffect(() => {
+    if (!startDate || !endDate) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible" && !loading && !refreshing) {
+        fetchAnalytics(selectedProduct, startDate, endDate, {
+          refresh: "latest",
+          background: true,
+        });
+      }
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [fetchAnalytics, selectedProduct, startDate, endDate, loading, refreshing]);
 
   // Handle Product change from dropdown with instant fetch
   const handleProductChange = (newProductId: string) => {
@@ -219,6 +248,13 @@ export const Dashboard: React.FC = () => {
     setEndDate(initialEnd);
     setActivePreset("30");
     fetchAnalytics("all", initialStart, initialEnd);
+  };
+
+  const handleRefresh = () => {
+    fetchAnalytics(selectedProduct, startDate, endDate, {
+      refresh: "full",
+      background: true,
+    });
   };
 
   // Handle configuration saved successfully
@@ -346,6 +382,16 @@ export const Dashboard: React.FC = () => {
                       } analysed`}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={loading || refreshing || !startDate || !endDate}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-semibold text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                title="Reload the complete date range from Shopify"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
+              </button>
             </div>
           )}
         </section>

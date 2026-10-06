@@ -225,6 +225,17 @@ export async function shopifyFetch<T>({
       response = await runFetch(accessToken);
     }
 
+    // Shopify can also enforce throttling with HTTP 429. Respect its requested
+    // delay when present, with a bounded fallback, and retry transparently.
+    if (response.status === 429 && attempt < MAX_THROTTLE_RETRIES) {
+      const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+      const waitMs = Number.isFinite(retryAfterSeconds)
+        ? Math.min(10000, Math.max(250, retryAfterSeconds * 1000))
+        : Math.min(10000, 1000 * (attempt + 1));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    }
+
     if (!response.ok) {
       const errorBody = await response.text().catch(() => "");
       throw new ShopifyApiError(
