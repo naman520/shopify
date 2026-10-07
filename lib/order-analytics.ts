@@ -185,6 +185,7 @@ export function calculateStateAnalytics(
     string,
     {
       campaign: string;
+      latestLeadAt: string;
       orderIds: Set<string>;
       units: number;
       revenue: number;
@@ -281,6 +282,7 @@ export function calculateStateAnalytics(
     if (!campaignMap[campaignKey]) {
       campaignMap[campaignKey] = {
         campaign: campaignKey,
+        latestLeadAt: order.createdAt,
         orderIds: new Set<string>(),
         units: 0,
         revenue: 0,
@@ -288,6 +290,9 @@ export function calculateStateAnalytics(
       };
     }
     campaignMap[campaignKey].orderIds.add(order.id);
+    if (order.createdAt > campaignMap[campaignKey].latestLeadAt) {
+      campaignMap[campaignKey].latestLeadAt = order.createdAt;
+    }
 
     // Track which state this campaign's order shipped to
     if (!campaignMap[campaignKey].statesMap[stateName]) {
@@ -422,6 +427,7 @@ export function calculateStateAnalytics(
 
     return {
       campaign: c.campaign,
+      latestLeadAt: c.latestLeadAt,
       orders: c.orderIds.size,
       units: c.units,
       revenue: rev,
@@ -592,6 +598,7 @@ export function getSampleAnalytics(selectedProductTitle: string = "All Products"
   const sampleCampaigns: CampaignAnalytics[] = [
     {
       campaign: "787778",
+      latestLeadAt: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
       orders: 312,
       units: 380,
       revenue: 165000,
@@ -605,6 +612,7 @@ export function getSampleAnalytics(selectedProductTitle: string = "All Products"
     },
     {
       campaign: "120253422144460721",
+      latestLeadAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       orders: 210,
       units: 245,
       revenue: 108000,
@@ -618,6 +626,7 @@ export function getSampleAnalytics(selectedProductTitle: string = "All Products"
     },
     {
       campaign: "120253470867910721",
+      latestLeadAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
       orders: 145,
       units: 172,
       revenue: 71000,
@@ -630,6 +639,7 @@ export function getSampleAnalytics(selectedProductTitle: string = "All Products"
     },
     {
       campaign: NO_CAMPAIGN_LABEL,
+      latestLeadAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
       orders: 314,
       units: 397,
       revenue: 190800,

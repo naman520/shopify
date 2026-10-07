@@ -11,12 +11,13 @@ import {
   ChevronUp,
   X,
   MapPin,
+  Clock3,
 } from "lucide-react";
 import { CampaignAnalytics } from "@/types/shopify";
 import { formatCurrency, formatNumber } from "@/lib/formatters";
 import { TableSkeleton } from "./SkeletonLoaders";
 
-type SortField = "campaign" | "orders" | "units" | "revenue";
+type SortField = "campaign" | "latestLeadAt" | "orders" | "units" | "revenue";
 type SortOrder = "asc" | "desc";
 
 interface CampaignOrdersTableProps {
@@ -31,7 +32,7 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
   loading = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortField, setSortField] = useState<SortField>("revenue");
+  const [sortField, setSortField] = useState<SortField>("latestLeadAt");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
@@ -66,6 +67,17 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
 
   const hasSearch = searchTerms.length > 0;
   const isBulkSearch = searchTerms.length > 1;
+
+  const mostRecentCampaign = useMemo(
+    () =>
+      campaigns.reduce<CampaignAnalytics | undefined>((latest, campaign) => {
+        if (campaign.campaign === "Direct / No Campaign" || !campaign.latestLeadAt) return latest;
+        return !latest || campaign.latestLeadAt > (latest.latestLeadAt || "")
+          ? campaign
+          : latest;
+      }, undefined),
+    [campaigns]
+  );
 
   // Match any entered campaign ID. A single value keeps the original partial-search behavior.
   const filteredCampaigns = useMemo(() => {
@@ -123,6 +135,22 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
     );
   };
 
+  const formatLeadDate = (value?: string) => {
+    if (!value) return "Not available";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "Not available";
+
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    }).format(date);
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Table Header Controls */}
@@ -136,8 +164,16 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ad campaign ID per order — expand a row to see which states its orders came from
+            Campaign states and the newest lead received, based on Shopify order time
           </p>
+          {mostRecentCampaign && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-emerald-700">
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>Most recent campaign lead:</span>
+              <span className="font-bold font-mono">{mostRecentCampaign.campaign}</span>
+              <span className="text-emerald-600">• {formatLeadDate(mostRecentCampaign.latestLeadAt)}</span>
+            </p>
+          )}
         </div>
 
         {/* Single and bulk campaign search */}
@@ -213,6 +249,19 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
                     {renderSortIcon("campaign")}
                   </div>
                 </th>
+                <th scope="col" className="min-w-48 px-3 py-3.5">
+                  <span>States</span>
+                </th>
+                <th
+                  scope="col"
+                  className="min-w-44 px-3 py-3.5 cursor-pointer select-none group"
+                  onClick={() => handleSort("latestLeadAt")}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span>Latest lead</span>
+                    {renderSortIcon("latestLeadAt")}
+                  </div>
+                </th>
                 <th
                   scope="col"
                   className="px-3 py-3.5 text-right cursor-pointer select-none group"
@@ -249,11 +298,13 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200/80 bg-white">
-              {sortedCampaigns.map((row, index) => {
-                const isTop = index === 0 && sortField === "revenue" && sortOrder === "desc";
+              {sortedCampaigns.map((row) => {
                 const key = row.campaign;
                 const hasStates = row.states && row.states.length > 0;
                 const isExpanded = !!expandedRows[key];
+                const isMostRecent = row.campaign === mostRecentCampaign?.campaign;
+                const visibleStates = row.states?.slice(0, hasSearch ? 5 : 2) || [];
+                const hiddenStateCount = (row.states?.length || 0) - visibleStates.length;
 
                 return (
                   <React.Fragment key={key}>
@@ -276,12 +327,51 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
                           )}
                           <Megaphone className="h-4 w-4 text-slate-400 shrink-0" />
                           <span className="font-semibold text-slate-900 font-mono">{row.campaign}</span>
-                          {isTop && (
+                          {isMostRecent && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
                               <TrendingUp className="h-3 w-3" />
-                              Top
+                              Most recent
                             </span>
                           )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3.5">
+                        {hasStates ? (
+                          <div
+                            className="flex max-w-xs flex-wrap gap-1"
+                            title={row.states?.map((state) => state.state).join(", ")}
+                          >
+                            {visibleStates.map((state) => (
+                              <span
+                                key={state.state}
+                                className="inline-flex items-center rounded-md border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800"
+                              >
+                                {state.state}
+                              </span>
+                            ))}
+                            {hiddenStateCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => toggleExpand(key)}
+                                className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                                title="Show all campaign states"
+                              >
+                                +{hiddenStateCount} more
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">No state</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3.5 whitespace-nowrap">
+                        <div
+                          className={`flex items-center gap-1.5 text-xs font-medium ${
+                            isMostRecent ? "text-emerald-700" : "text-slate-600"
+                          }`}
+                        >
+                          <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span>{formatLeadDate(row.latestLeadAt)}</span>
                         </div>
                       </td>
                       <td className="px-3 py-3.5 text-right whitespace-nowrap text-slate-700 font-medium font-mono">
@@ -311,7 +401,7 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
                     {/* Expanded: which states this campaign's orders shipped to */}
                     {isExpanded && hasStates && (
                       <tr className="bg-slate-50/20">
-                        <td colSpan={5} className="py-4.5 pl-8 pr-4 sm:pl-12 sm:pr-6 border-b border-slate-200">
+                        <td colSpan={7} className="py-4.5 pl-8 pr-4 sm:pl-12 sm:pr-6 border-b border-slate-200">
                           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm max-w-2xl">
                             <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
                               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -367,6 +457,10 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
                 <td className="py-3.5 pl-4 sm:pl-6 pr-3">
                   <span>Total ({filteredCampaigns.length} campaigns)</span>
                 </td>
+                <td className="px-3 py-3.5 text-xs text-slate-500">
+                  {hasSearch ? "Campaign states only" : "—"}
+                </td>
+                <td className="px-3 py-3.5 text-xs text-slate-500">—</td>
                 <td className="px-3 py-3.5 text-right font-mono">
                   {formatNumber(totals.orders)}
                 </td>

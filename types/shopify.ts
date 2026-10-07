@@ -131,6 +131,8 @@ export interface CampaignStateBreakdown {
 
 export interface CampaignAnalytics {
   campaign: string;
+  /** ISO timestamp of the newest matching Shopify order for this campaign. */
+  latestLeadAt?: string;
   orders: number;
   units: number;
   revenue: number;
