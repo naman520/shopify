@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Building2,
   Package,
+  X,
 } from "lucide-react";
 import { StateAnalytics } from "@/types/shopify";
 import { formatCurrency, formatNumber } from "@/lib/formatters";
@@ -21,12 +22,18 @@ type SortOrder = "asc" | "desc";
 
 interface StateOrdersTableProps {
   states: StateAnalytics[];
+  campaignFilterActive?: boolean;
+  matchedCampaignCount?: number;
+  onClearCampaignFilter?: () => void;
   currency?: string;
   loading?: boolean;
 }
 
 export const StateOrdersTable: React.FC<StateOrdersTableProps> = ({
   states,
+  campaignFilterActive = false,
+  matchedCampaignCount = 0,
+  onClearCampaignFilter,
   currency = "INR",
   loading = false,
 }) => {
@@ -118,8 +125,28 @@ export const StateOrdersTable: React.FC<StateOrdersTableProps> = ({
             </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Geographic order volume and sales distribution based on shipping address
+            {campaignFilterActive
+              ? "Geographic totals for the campaign IDs selected in By Campaign"
+              : "Geographic order volume and sales distribution based on shipping address"}
           </p>
+          {campaignFilterActive && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">
+              <span>
+                Campaign filter active · {matchedCampaignCount} {matchedCampaignCount === 1 ? "campaign" : "campaigns"} matched
+              </span>
+              {onClearCampaignFilter && (
+                <button
+                  type="button"
+                  onClick={onClearCampaignFilter}
+                  className="rounded p-0.5 text-emerald-700 hover:bg-emerald-100"
+                  aria-label="Clear campaign filter"
+                  title="Clear campaign filter"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Search input */}
@@ -147,11 +174,17 @@ export const StateOrdersTable: React.FC<StateOrdersTableProps> = ({
             <Inbox className="h-6 w-6" />
           </div>
           <h3 className="text-sm font-semibold text-slate-900 mb-1">
-            {searchTerm ? "No matching states" : "No orders found"}
+            {searchTerm
+              ? "No matching states"
+              : campaignFilterActive
+                ? "No states for these campaigns"
+                : "No orders found"}
           </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
             {searchTerm
               ? `No states matching "${searchTerm}". Try checking the spelling or clear your search.`
+              : campaignFilterActive
+                ? "No state data was found for the searched campaign IDs in the selected product and date range."
               : "No orders found for the selected product and date range. Try broadening your date filter."}
           </p>
         </div>

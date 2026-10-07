@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 import { Header } from "./Header";
 import { StatsCards } from "./StatsCards";
@@ -11,6 +11,11 @@ import { CampaignOrdersTable } from "./CampaignOrdersTable";
 import { SettingsModal } from "./SettingsModal";
 import { ShopifyProductItem, OrdersApiResponse, ProductsApiResponse } from "@/types/shopify";
 import { formatDateInputValue, formatDateDisplay, formatNumber } from "@/lib/formatters";
+import {
+  aggregateStatesForCampaigns,
+  filterCampaignsBySearch,
+  getCampaignSearchTerms,
+} from "@/lib/campaign-filters";
 import { AlertTriangle, RefreshCw, KeyRound, MapPin, Megaphone } from "lucide-react";
 
 
@@ -27,6 +32,7 @@ export const Dashboard: React.FC = () => {
     "today" | "yesterday" | "7" | "30" | "month" | "custom"
   >("30");
   const [activeTab, setActiveTab] = useState<"states" | "campaigns">("states");
+  const [campaignSearch, setCampaignSearch] = useState<string>("");
 
   // Analytics state
   const [analytics, setAnalytics] = useState<OrdersApiResponse | null>(null);
@@ -52,6 +58,22 @@ export const Dashboard: React.FC = () => {
     startDate: "",
     endDate: "",
   });
+
+  const campaignFilterResult = useMemo(() => {
+    const campaigns = analytics?.campaigns || [];
+    const isActive = getCampaignSearchTerms(campaignSearch).length > 0;
+    const matchingCampaigns = isActive
+      ? filterCampaignsBySearch(campaigns, campaignSearch)
+      : campaigns;
+
+    return {
+      isActive,
+      matchingCampaigns,
+      states: isActive
+        ? aggregateStatesForCampaigns(matchingCampaigns)
+        : analytics?.states || [],
+    };
+  }, [analytics, campaignSearch]);
 
   // Fetch store configuration status
   const loadConfigStatus = useCallback(async () => {
@@ -244,6 +266,7 @@ export const Dashboard: React.FC = () => {
     const initialStart = formatDateInputValue(thirtyDaysAgo);
 
     setSelectedProduct("all");
+    setCampaignSearch("");
     setStartDate(initialStart);
     setEndDate(initialEnd);
     setActivePreset("30");
@@ -424,9 +447,9 @@ export const Dashboard: React.FC = () => {
             >
               <MapPin className="h-4 w-4" />
               <span>By State</span>
-              {analytics?.states?.length ? (
+              {campaignFilterResult.states.length ? (
                 <span className="text-xs font-medium text-slate-400">
-                  ({analytics.states.length})
+                  ({campaignFilterResult.states.length})
                 </span>
               ) : null}
             </button>
@@ -442,9 +465,9 @@ export const Dashboard: React.FC = () => {
             >
               <Megaphone className="h-4 w-4" />
               <span>By Campaign</span>
-              {analytics?.campaigns?.length ? (
+              {campaignFilterResult.matchingCampaigns.length ? (
                 <span className="text-xs font-medium text-slate-400">
-                  ({analytics.campaigns.length})
+                  ({campaignFilterResult.matchingCampaigns.length})
                 </span>
               ) : null}
             </button>
@@ -452,13 +475,18 @@ export const Dashboard: React.FC = () => {
 
           {activeTab === "states" ? (
             <StateOrdersTable
-              states={analytics?.states || []}
+              states={campaignFilterResult.states}
+              campaignFilterActive={campaignFilterResult.isActive}
+              matchedCampaignCount={campaignFilterResult.matchingCampaigns.length}
+              onClearCampaignFilter={() => setCampaignSearch("")}
               currency={analytics?.summary?.currency || "INR"}
               loading={loading}
             />
           ) : (
             <CampaignOrdersTable
               campaigns={analytics?.campaigns || []}
+              searchTerm={campaignSearch}
+              onSearchTermChange={setCampaignSearch}
               currency={analytics?.summary?.currency || "INR"}
               loading={loading}
             />
