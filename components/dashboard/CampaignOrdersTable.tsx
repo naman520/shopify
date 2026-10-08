@@ -501,9 +501,7 @@ export const CampaignOrdersTable: React.FC<CampaignOrdersTableProps> = ({
                 <td className="py-3.5 pl-4 sm:pl-6 pr-3">
                   <span>Total ({filteredCampaigns.length} campaigns)</span>
                 </td>
-                <td className="px-3 py-3.5 text-xs text-slate-500">
-                  {hasSearch ? "Campaign states only" : "—"}
-                </td>
+                
                 <td className="px-3 py-3.5 text-xs text-slate-500">—</td>
                 <td className="px-3 py-3.5 text-right font-mono">
                   {formatNumber(totals.orders)}
