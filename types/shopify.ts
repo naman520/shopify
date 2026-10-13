@@ -172,6 +172,24 @@ export interface OrdersApiResponse {
   maxOrders?: number;
   fetchedAt?: number;
   syncMode?: "cache" | "incremental" | "full";
+  storeErrors?: Array<{ storeId: string; storeName: string; error: string }>;
+  partialData?: boolean;
+  error?: string;
+}
+
+export interface ShopifyStoreSummary {
+  id: string;
+  name: string;
+  domain: string;
+  apiVersion: string;
+  isConfigured: boolean;
+  hasClientCredentials: boolean;
+  environmentManaged?: boolean;
+}
+
+export interface ShopifyConfigResponse {
+  isConfigured: boolean;
+  stores: ShopifyStoreSummary[];
   error?: string;
 }
 

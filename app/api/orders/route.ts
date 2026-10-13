@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isShopifyConfigured, shopifyFetch } from "@/lib/shopify";
+import { isShopifyConfigured, loadStores, shopifyFetch } from "@/lib/shopify-multi";
 import { GET_ORDERS_QUERY, GET_ORDERS_COUNT_QUERY } from "@/lib/shopify-queries";
 import { calculateStateAnalytics, getSampleAnalytics } from "@/lib/order-analytics";
 import { ShopifyOrderNode, ShopifyOrdersQueryResponse } from "@/types/shopify";
@@ -59,10 +59,10 @@ function buildShopifyQuery(startDate: string | null, endDate: string | null): st
   return parts.join(" ");
 }
 
-async function fetchOrdersForRange(shopifyQuery: string): Promise<CachedRange> {
+async function fetchOrdersForRange(shopifyQuery: string, storeId: string): Promise<CachedRange> {
   const countData = await shopifyFetch<{
     ordersCount: { count: number; precision: string };
-  }>({ query: GET_ORDERS_COUNT_QUERY, variables: { query: shopifyQuery } });
+  }>({ query: GET_ORDERS_COUNT_QUERY, variables: { query: shopifyQuery }, storeId });
 
   const totalAvailable = countData?.ordersCount?.count ?? 0;
 
@@ -76,6 +76,7 @@ async function fetchOrdersForRange(shopifyQuery: string): Promise<CachedRange> {
     const data: ShopifyOrdersQueryResponse = await shopifyFetch<ShopifyOrdersQueryResponse>({
       query: GET_ORDERS_QUERY,
       variables: { cursor, query: shopifyQuery },
+      storeId,
     });
 
     if (data?.orders?.nodes) {
@@ -102,15 +103,16 @@ async function fetchOrdersForRange(shopifyQuery: string): Promise<CachedRange> {
  */
 async function refreshLatestOrdersForRange(
   shopifyQuery: string,
-  cached: CachedRange
+  cached: CachedRange,
+  storeId: string
 ): Promise<CachedRange> {
   if (cached.orders.length === 0) {
-    return fetchOrdersForRange(shopifyQuery);
+    return fetchOrdersForRange(shopifyQuery, storeId);
   }
 
   const countData = await shopifyFetch<{
     ordersCount: { count: number; precision: string };
-  }>({ query: GET_ORDERS_COUNT_QUERY, variables: { query: shopifyQuery } });
+  }>({ query: GET_ORDERS_COUNT_QUERY, variables: { query: shopifyQuery }, storeId });
 
   const newestCreatedAt = cached.orders.reduce(
     (newest, order) => (order.createdAt > newest ? order.createdAt : newest),
@@ -130,6 +132,7 @@ async function refreshLatestOrdersForRange(
     const data: ShopifyOrdersQueryResponse = await shopifyFetch<ShopifyOrdersQueryResponse>({
       query: GET_ORDERS_QUERY,
       variables: { cursor, query: latestQuery },
+      storeId,
     });
 
     if (data?.orders?.nodes) {
@@ -158,15 +161,71 @@ async function refreshLatestOrdersForRange(
   };
 }
 
+async function loadStoreRange(
+  storeId: string,
+  shopifyQuery: string,
+  startDate: string | null,
+  endDate: string | null,
+  refreshMode: string | null
+): Promise<{ range: CachedRange; syncMode: "cache" | "incremental" | "full" }> {
+  const cacheKey = `${storeId}|${startDate || "*"}|${endDate || "*"}`;
+  let range = readCache(cacheKey);
+  let syncMode: "cache" | "incremental" | "full" = "cache";
+
+  if (!range || refreshMode === "full") {
+    range = await fetchOrdersForRange(shopifyQuery, storeId);
+    writeCache(cacheKey, range);
+    syncMode = "full";
+  } else if (refreshMode === "latest") {
+    range = await refreshLatestOrdersForRange(shopifyQuery, range, storeId);
+    writeCache(cacheKey, range);
+    syncMode = "incremental";
+  }
+  return { range, syncMode };
+}
+
+function namespaceOrder(order: ShopifyOrderNode, storeId: string, storeName: string) {
+  return {
+    ...order,
+    id: `${storeId}:${order.id}`,
+    name: `${storeName} / ${order.name}`,
+    lineItems: {
+      ...order.lineItems,
+      nodes: (order.lineItems?.nodes || []).map((item) => ({
+        ...item,
+        variant: item.variant
+          ? {
+              ...item.variant,
+              product: item.variant.product
+                ? {
+                    ...item.variant.product,
+                    id: `${storeId}:${item.variant.product.id}`,
+                    title: `${item.variant.product.title} — ${storeName}`,
+                  }
+                : item.variant.product,
+            }
+          : item.variant,
+      })),
+    },
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const productId = searchParams.get("productId") || "all";
+    const storeId = searchParams.get("storeId") || "all";
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const refreshMode = searchParams.get("refresh");
 
-    if (!isShopifyConfigured()) {
+    const configuredStores = loadStores().filter((store) => isShopifyConfigured(store.id));
+    const selectedStores =
+      storeId === "all"
+        ? configuredStores
+        : configuredStores.filter((store) => store.id === storeId);
+
+    if (selectedStores.length === 0) {
       const sample = getSampleAnalytics();
       return NextResponse.json(
         {
@@ -186,22 +245,49 @@ export async function GET(request: NextRequest) {
     }
 
     const shopifyQuery = buildShopifyQuery(startDate, endDate);
-    const cacheKey = `${startDate || "*"}|${endDate || "*"}`;
+    const settledRanges = await Promise.allSettled(
+      selectedStores.map(async (store) => ({
+        store,
+        ...(await loadStoreRange(store.id, shopifyQuery, startDate, endDate, refreshMode)),
+      }))
+    );
+    const successfulRanges = settledRanges
+      .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof loadStoreRange>> & { store: typeof selectedStores[number] }> => result.status === "fulfilled")
+      .map((result) => result.value);
+    const storeErrors = settledRanges.flatMap((result, index) =>
+      result.status === "rejected"
+        ? [{
+            storeId: selectedStores[index].id,
+            storeName: selectedStores[index].name,
+            error: result.reason?.message || "Store data could not be loaded.",
+          }]
+        : []
+    );
 
-    let range = readCache(cacheKey);
-    let syncMode: "cache" | "incremental" | "full" = "cache";
-    if (!range || refreshMode === "full") {
-      range = await fetchOrdersForRange(shopifyQuery);
-      writeCache(cacheKey, range);
-      syncMode = "full";
-    } else if (refreshMode === "latest") {
-      range = await refreshLatestOrdersForRange(shopifyQuery, range);
-      writeCache(cacheKey, range);
-      syncMode = "incremental";
+    if (successfulRanges.length === 0) {
+      throw new Error(storeErrors.map((item) => `${item.storeName}: ${item.error}`).join(" | "));
     }
 
+    const isCombined = storeId === "all";
+    const orders = successfulRanges.flatMap(({ store, range }) =>
+      isCombined
+        ? range.orders.map((order) => namespaceOrder(order, store.id, store.name))
+        : range.orders
+    );
+    const totalAvailable = successfulRanges.reduce(
+      (sum, item) => sum + item.range.totalAvailable,
+      0
+    );
+    const truncated = successfulRanges.some((item) => item.range.truncated);
+    const fetchedAt = Math.max(...successfulRanges.map((item) => item.range.fetchedAt));
+    const syncMode = successfulRanges.some((item) => item.syncMode === "full")
+      ? "full"
+      : successfulRanges.some((item) => item.syncMode === "incremental")
+        ? "incremental"
+        : "cache";
+
     const { summary, states, runningProducts, campaigns } = calculateStateAnalytics(
-      range.orders,
+      orders,
       productId
     );
 
@@ -212,12 +298,14 @@ export async function GET(request: NextRequest) {
         states,
         runningProducts,
         campaigns,
-        totalCount: range.orders.length,
-        totalAvailable: range.totalAvailable,
-        truncated: range.truncated,
+        totalCount: orders.length,
+        totalAvailable,
+        truncated,
         maxOrders: MAX_ORDERS,
-        fetchedAt: range.fetchedAt,
+        fetchedAt,
         syncMode,
+        storeErrors,
+        partialData: storeErrors.length > 0,
       },
       { headers: NO_STORE_HEADERS }
     );
@@ -227,7 +315,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         error: `Unable to load Shopify data: ${detail}`,
-        isConfigured: isShopifyConfigured(),
+        isConfigured: isShopifyConfigured(request.nextUrl.searchParams.get("storeId")),
         summary: {
           totalOrders: 0,
           totalUnits: 0,

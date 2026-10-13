@@ -1,13 +1,24 @@
 import React from "react";
 import { Store, CheckCircle2, AlertCircle, Settings } from "lucide-react";
+import { ShopifyStoreSummary } from "@/types/shopify";
 
 interface HeaderProps {
   isConfigured: boolean;
   storeDomain?: string;
+  stores: ShopifyStoreSummary[];
+  selectedStoreId: string;
+  onStoreChange: (storeId: string) => void;
   onOpenSettings: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isConfigured, storeDomain, onOpenSettings }) => {
+export const Header: React.FC<HeaderProps> = ({
+  isConfigured,
+  storeDomain,
+  stores,
+  selectedStoreId,
+  onStoreChange,
+  onOpenSettings,
+}) => {
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
@@ -29,6 +40,23 @@ export const Header: React.FC<HeaderProps> = ({ isConfigured, storeDomain, onOpe
           </div>
 
           <div className="flex items-center gap-3">
+            {stores.length > 0 && (
+              <label className="relative">
+                <span className="sr-only">Select Shopify store</span>
+                <select
+                  value={selectedStoreId}
+                  onChange={(event) => onStoreChange(event.target.value)}
+                  className="max-w-[190px] cursor-pointer rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm font-semibold text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {stores.length > 1 && <option value="all">All Stores (Combined)</option>}
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {isConfigured ? (
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
                 <span className="relative flex h-2 w-2">

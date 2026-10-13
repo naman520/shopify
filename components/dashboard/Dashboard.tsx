@@ -8,8 +8,14 @@ import { ProductSelector } from "./ProductSelector";
 import { DateRangeFilter } from "./DateRangeFilter";
 import { StateOrdersTable } from "./StateOrdersTable";
 import { CampaignOrdersTable } from "./CampaignOrdersTable";
-import { SettingsModal } from "./SettingsModal";
-import { ShopifyProductItem, OrdersApiResponse, ProductsApiResponse } from "@/types/shopify";
+import { MultiStoreSettingsModal } from "./MultiStoreSettingsModal";
+import {
+  ShopifyProductItem,
+  OrdersApiResponse,
+  ProductsApiResponse,
+  ShopifyConfigResponse,
+  ShopifyStoreSummary,
+} from "@/types/shopify";
 import { formatDateInputValue, formatDateDisplay, formatNumber } from "@/lib/formatters";
 import {
   aggregateStatesForCampaigns,
@@ -41,6 +47,8 @@ export const Dashboard: React.FC = () => {
   const [error, setError] = useState<string>("");
   const [isConfigured, setIsConfigured] = useState<boolean>(true);
   const [storeDomain, setStoreDomain] = useState<string>("");
+  const [stores, setStores] = useState<ShopifyStoreSummary[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>("");
 
   // Modal state
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
@@ -76,24 +84,48 @@ export const Dashboard: React.FC = () => {
   }, [analytics, campaignSearch]);
 
   // Fetch store configuration status
-  const loadConfigStatus = useCallback(async () => {
+  const loadConfigStatus = useCallback(async (preferredStoreId?: string) => {
     try {
-      const res = await fetch("/api/config");
+      const res = await fetch("/api/config", { cache: "no-store" });
       if (res.ok) {
-        const data = await res.json();
-        setIsConfigured(data.isConfigured);
-        setStoreDomain(data.domain || "");
+        const data: ShopifyConfigResponse = await res.json();
+        const availableStores = data.stores || [];
+        const preferredExists =
+          preferredStoreId === "all"
+            ? availableStores.length > 0
+            : availableStores.some((store) => store.id === preferredStoreId);
+        const nextId =
+          (preferredStoreId && preferredExists
+            ? preferredStoreId
+            : availableStores.length > 1
+              ? "all"
+              : availableStores[0]?.id) || "";
+        const selected = availableStores.find((store) => store.id === nextId);
+        setStores(availableStores);
+        setSelectedStoreId(nextId);
+        setIsConfigured(
+          nextId === "all"
+            ? availableStores.some((store) => store.isConfigured)
+            : selected?.isConfigured || false
+        );
+        setStoreDomain(
+          nextId === "all" ? `${availableStores.length} stores combined` : selected?.domain || ""
+        );
+        return nextId;
       }
     } catch (err) {
       console.error("Failed to load connection status:", err);
     }
+    return "";
   }, []);
 
   // Fetch products catalog
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (storeId = selectedStoreId) => {
     try {
       setProductsLoading(true);
-      const res = await fetch("/api/products");
+      const params = new URLSearchParams();
+      if (storeId) params.set("storeId", storeId);
+      const res = await fetch(`/api/products?${params.toString()}`, { cache: "no-store" });
       const data: ProductsApiResponse = await res.json();
 
       if (data.products) {
@@ -107,7 +139,7 @@ export const Dashboard: React.FC = () => {
     } finally {
       setProductsLoading(false);
     }
-  }, []);
+  }, [selectedStoreId]);
 
   // Fetch orders analytics function with race-condition prevention
   const fetchAnalytics = useCallback(
@@ -115,7 +147,7 @@ export const Dashboard: React.FC = () => {
       prodId: string,
       start: string,
       end: string,
-      options: { refresh?: "latest" | "full"; background?: boolean } = {}
+      options: { refresh?: "latest" | "full"; background?: boolean; storeId?: string } = {}
     ) => {
       const currentRequestId = ++activeRequestId.current;
       try {
@@ -131,6 +163,8 @@ export const Dashboard: React.FC = () => {
         if (start) params.set("startDate", start);
         if (end) params.set("endDate", end);
         if (options.refresh) params.set("refresh", options.refresh);
+        const requestStoreId = options.storeId || selectedStoreId;
+        if (requestStoreId) params.set("storeId", requestStoreId);
 
         const res = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
         const data: OrdersApiResponse = await res.json();
@@ -175,14 +209,11 @@ export const Dashboard: React.FC = () => {
         }
       }
     },
-    [products]
+    [products, selectedStoreId]
   );
 
   // Initialize dates and trigger initial fetch on mount
   useEffect(() => {
-    loadConfigStatus();
-    loadProducts();
-
     const today = new Date();
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(today.getDate() - 30);
@@ -270,7 +301,12 @@ export const Dashboard: React.FC = () => {
     setStartDate(initialStart);
     setEndDate(initialEnd);
     setActivePreset("30");
-    fetchAnalytics("all", initialStart, initialEnd);
+    const initialize = async () => {
+      const storeId = await loadConfigStatus();
+      loadProducts(storeId);
+      fetchAnalytics("all", initialStart, initialEnd, { storeId });
+    };
+    initialize();
   };
 
   const handleRefresh = () => {
@@ -280,12 +316,30 @@ export const Dashboard: React.FC = () => {
     });
   };
 
-  // Handle configuration saved successfully
-  const handleConfigSaved = () => {
-    loadConfigStatus();
-    loadProducts();
+  const handleStoreChange = (storeId: string) => {
+    const selected = stores.find((store) => store.id === storeId);
+    setSelectedStoreId(storeId);
+    setSelectedProduct("all");
+    setCampaignSearch("");
+    setProducts([]);
+    setIsConfigured(
+      storeId === "all" ? stores.some((store) => store.isConfigured) : selected?.isConfigured || false
+    );
+    setStoreDomain(storeId === "all" ? `${stores.length} stores combined` : selected?.domain || "");
+    loadProducts(storeId);
     if (startDate && endDate) {
-      fetchAnalytics(selectedProduct, startDate, endDate);
+      fetchAnalytics("all", startDate, endDate, { storeId });
+    }
+  };
+
+  // Handle configuration saved successfully
+  const handleConfigSaved = async (storeId?: string) => {
+    const nextStoreId = await loadConfigStatus(storeId || selectedStoreId);
+    setSelectedProduct("all");
+    setCampaignSearch("");
+    loadProducts(nextStoreId);
+    if (startDate && endDate && nextStoreId) {
+      fetchAnalytics("all", startDate, endDate, { storeId: nextStoreId });
     }
   };
 
@@ -294,6 +348,9 @@ export const Dashboard: React.FC = () => {
       <Header 
         isConfigured={isConfigured} 
         storeDomain={storeDomain}
+        stores={stores}
+        selectedStoreId={selectedStoreId}
+        onStoreChange={handleStoreChange}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -346,6 +403,21 @@ export const Dashboard: React.FC = () => {
             </button>
           </div>
         )}
+
+        {analytics?.partialData && analytics.storeErrors?.length ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <h3 className="text-sm font-semibold">Showing partial combined data</h3>
+                <p className="mt-1 text-xs text-amber-800">
+                  {analytics.storeErrors.map((item) => item.storeName).join(", ")} could not be loaded.
+                  Data from the available store is still shown below.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {/* Unified Filter Card */}
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
@@ -502,7 +574,7 @@ export const Dashboard: React.FC = () => {
       </footer>
 
       {/* Settings Modal */}
-      <SettingsModal
+      <MultiStoreSettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSaved={handleConfigSaved}

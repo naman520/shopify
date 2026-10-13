@@ -19,6 +19,8 @@ A simple, fast, and responsive **Shopify Order Analytics Dashboard** built with 
 - **Interactive State Search & Sorting**: Real-time state filter and sorting by State name, Orders, Units, or Revenue.
 - **Cursor-Based GraphQL Pagination**: Efficiently fetches Shopify orders across multiple pages on the server side.
 - **Zero Client Credential Exposure**: All Shopify Admin API calls and tokens stay strictly on the server.
+- **Two-store Dashboard**: Connect up to two Shopify stores, switch between them, or use **All Stores (Combined)** for one consolidated report.
+- **Fault-tolerant Combined View**: If one store is temporarily unavailable, data from the healthy store remains visible with a partial-data warning.
 
 ---
 
@@ -52,39 +54,69 @@ cp .env.local.example .env.local
 Populate the variables:
 
 ```env
-SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
-SHOPIFY_ACCESS_TOKEN=shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-SHOPIFY_API_VERSION=2024-07
+# Store 1
+SHOPIFY_STORE_NAME=Main Store
+SHOPIFY_STORE_DOMAIN=first-store.myshopify.com
+SHOPIFY_CLIENT_ID=your_first_store_client_id
+SHOPIFY_CLIENT_SECRET=your_first_store_client_secret
+
+# Store 2
+SHOPIFY_STORE_NAME_2=Second Store
+SHOPIFY_DOMAIN=second-store.myshopify.com
+SHOPIFY_CLIENT_ID_2=your_second_store_client_id
+SHOPIFY_CLIENT_SECRET_2=your_second_store_client_secret
+
+SHOPIFY_API_VERSION=2026-10
 ```
+
+Environment variables are the source of truth locally and on Vercel. When these
+variables are present, the dashboard shows both connections as read-only and does
+not try to overwrite them with `shopify-config.json`. After both are configured, the
+header selector provides **All Stores (Combined)** plus a separate option for each
+store.
+
+Use the exact variable names above in **Vercel → Project Settings → Environment
+Variables**, enable them for Production (and Preview if required), and redeploy after
+any change. Do not include spaces before or after a variable name.
 
 ---
 
 ## Shopify Setup Guide (Obtaining API Credentials)
 
-Follow these steps in your Shopify Admin to generate an Admin API Access Token:
+The settings form uses Shopify's current **Dev Dashboard client credentials** flow:
 
-1. **Log in to Shopify Admin**: Go to `https://admin.shopify.com/store/your-store-name`.
-2. **Navigate to App Development**:
-   - Go to **Settings** (bottom left) → **Apps and sales channels**.
-   - Click on **Develop apps** (top right).
-   - If prompted, click **Allow custom app development**.
-3. **Create Custom App**:
-   - Click **Create an app**.
-   - Name it `Order Analytics Dashboard` and choose your app developer account.
-4. **Configure Admin API Scopes**:
-   - In the **Configuration** tab, click **Configure** next to *Admin API integration*.
-   - Under **Orders**, select:
-     - `read_orders`
-   - Under **Products**, select:
-     - `read_products`
-   - Click **Save**.
-5. **Install App & Copy Token**:
-   - Go to the **API credentials** tab.
-   - Click **Install app** and confirm installation.
-   - Under **Admin API access token**, click **Reveal token once** and copy the token (starts with `shpat_...`).
-6. **Paste into `.env.local`**:
-   - Set `SHOPIFY_STORE_DOMAIN` to your `.myshopify.com` domain.
-   - Set `SHOPIFY_ACCESS_TOKEN` to your copied token.
+1. Open the [Shopify Dev Dashboard](https://dev.shopify.com/dashboard) and select the
+   organization that owns the store.
+2. Open **Apps**, create an app named `Order Analytics Dashboard`, and create an app
+   version with `read_orders` and `read_products` scopes.
+3. Install the app on the target store from the app's **Installs** card.
+4. Open the app's **Settings** page. Under **Credentials**, copy the **Client ID** and
+   **Client secret**.
+5. In this dashboard, open **Settings**, enter the store's permanent
+   `your-store.myshopify.com` domain and those credentials, then click **Save & verify**.
+6. Repeat for the second store. If it belongs to a different Shopify organization,
+   create/install the app in that organization and use that app's credentials.
+
+The dashboard exchanges these credentials server-side for a short-lived access token
+and refreshes it automatically. An older `SHOPIFY_ACCESS_TOKEN` in `.env.local` remains
+supported only as a legacy first-store configuration.
+
+### Credentials used by the in-dashboard connection form
+
+For each store, enter:
+
+- **Store name**: Any friendly label, such as `Main Store`.
+- **Store domain**: Found in Shopify Admin under **Settings → Domains**; use the
+  permanent `your-store.myshopify.com` domain.
+- **Client ID** and **Client secret**: In the Shopify **Dev Dashboard**, open the app,
+  then go to **Settings → Credentials**.
+- **API version**: Keep the latest version selected in the dashboard unless the app
+  is intentionally pinned to an older supported version.
+
+The app needs the `read_orders` and `read_products` Admin API scopes and must be
+installed on each store. Add `read_all_orders` only if Shopify has approved access and
+you need orders older than 60 days. Never commit `.env.local` or
+`shopify-config.json`; both are excluded by this repository's `.gitignore`.
 
 ---
 
