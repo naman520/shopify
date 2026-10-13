@@ -290,6 +290,39 @@ export async function GET(request: NextRequest) {
       orders,
       productId
     );
+    const successfulStoreBreakdown = successfulRanges.map(({ store, range }) => {
+      let storeProductId = productId;
+      if (isCombined && productId !== "all") {
+        const prefix = `${store.id}:`;
+        storeProductId = productId.startsWith(prefix)
+          ? productId.slice(prefix.length)
+          : "__no_matching_product__";
+      }
+      const storeAnalytics = calculateStateAnalytics(range.orders, storeProductId);
+      return {
+        storeId: store.id,
+        storeName: store.name,
+        domain: store.domain || "",
+        summary: storeAnalytics.summary,
+        ordersAnalyzed: range.orders.length,
+        totalAvailable: range.totalAvailable,
+        truncated: range.truncated,
+      };
+    });
+    const failedStoreBreakdown = storeErrors.map((item) => ({
+      storeId: item.storeId,
+      storeName: item.storeName,
+      domain: selectedStores.find((store) => store.id === item.storeId)?.domain || "",
+      ordersAnalyzed: 0,
+      totalAvailable: 0,
+      truncated: false,
+      error: item.error,
+    }));
+    const storeBreakdown = selectedStores.map((store) =>
+      [...successfulStoreBreakdown, ...failedStoreBreakdown].find(
+        (item) => item.storeId === store.id
+      )!
+    );
 
     return NextResponse.json(
       {
@@ -306,6 +339,7 @@ export async function GET(request: NextRequest) {
         syncMode,
         storeErrors,
         partialData: storeErrors.length > 0,
+        storeBreakdown,
       },
       { headers: NO_STORE_HEADERS }
     );

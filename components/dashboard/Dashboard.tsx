@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 
 import { Header } from "./Header";
 import { StatsCards } from "./StatsCards";
+import { StoreOrdersOverview } from "./StoreOrdersOverview";
 import { ProductSelector } from "./ProductSelector";
 import { DateRangeFilter } from "./DateRangeFilter";
 import { StateOrdersTable } from "./StateOrdersTable";
@@ -22,7 +23,7 @@ import {
   filterCampaignsBySearch,
   getCampaignSearchTerms,
 } from "@/lib/campaign-filters";
-import { AlertTriangle, RefreshCw, KeyRound, MapPin, Megaphone } from "lucide-react";
+import { AlertTriangle, RefreshCw, KeyRound, MapPin, Megaphone, Store } from "lucide-react";
 
 
 export const Dashboard: React.FC = () => {
@@ -82,6 +83,11 @@ export const Dashboard: React.FC = () => {
         : analytics?.states || [],
     };
   }, [analytics, campaignSearch]);
+
+  const selectedStoreLabel =
+    selectedStoreId === "all"
+      ? "All Stores (Combined)"
+      : stores.find((store) => store.id === selectedStoreId)?.name || "Select Store";
 
   // Fetch store configuration status
   const loadConfigStatus = useCallback(async (preferredStoreId?: string) => {
@@ -231,7 +237,12 @@ export const Dashboard: React.FC = () => {
       endDate: initialEnd,
     });
 
-    fetchAnalytics("all", initialStart, initialEnd);
+    const initialize = async () => {
+      const storeId = await loadConfigStatus();
+      loadProducts(storeId);
+      fetchAnalytics("all", initialStart, initialEnd, { storeId });
+    };
+    initialize();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pull only orders newer than the current cache once per minute. Pausing while
@@ -422,8 +433,30 @@ export const Dashboard: React.FC = () => {
         {/* Unified Filter Card */}
         <section className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Store Selector */}
+            <div className="lg:col-span-3">
+              <label className="block">
+                <span className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-600">
+                  <Store className="h-3.5 w-3.5 text-emerald-600" /> Store
+                </span>
+                <select
+                  value={selectedStoreId}
+                  onChange={(event) => handleStoreChange(event.target.value)}
+                  disabled={loading || stores.length === 0}
+                  className="w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  {stores.length > 1 && <option value="all">All Stores (Combined)</option>}
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             {/* Product Selector */}
-            <div className="lg:col-span-4">
+            <div className="lg:col-span-3">
               <ProductSelector
                 products={analytics?.runningProducts || []}
                 totalOrders={analytics?.summary?.totalOrders}
@@ -434,7 +467,7 @@ export const Dashboard: React.FC = () => {
             </div>
 
             {/* Date Range & Controls */}
-            <div className="lg:col-span-8">
+            <div className="lg:col-span-6">
               <DateRangeFilter
                 startDate={startDate}
                 endDate={endDate}
@@ -454,6 +487,10 @@ export const Dashboard: React.FC = () => {
             <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-slate-700">Currently showing:</span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {selectedStoreLabel}
+                </span>
+                <span className="text-slate-400">•</span>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   {appliedFilters.productTitle}
                 </span>
@@ -490,6 +527,13 @@ export const Dashboard: React.FC = () => {
             </div>
           )}
         </section>
+
+        <StoreOrdersOverview
+          stores={analytics?.storeBreakdown || []}
+          selectedStoreId={selectedStoreId}
+          onSelectStore={handleStoreChange}
+          loading={loading}
+        />
 
         {/* Summary Metrics Cards */}
         <section>

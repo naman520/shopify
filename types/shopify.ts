@@ -160,6 +160,17 @@ export interface RunningProductItem {
   revenue: number;
 }
 
+export interface StoreAnalyticsBreakdown {
+  storeId: string;
+  storeName: string;
+  domain: string;
+  summary?: AnalyticsSummary;
+  ordersAnalyzed: number;
+  totalAvailable: number;
+  truncated: boolean;
+  error?: string;
+}
+
 export interface OrdersApiResponse {
   summary: AnalyticsSummary;
   states: StateAnalytics[];
@@ -174,6 +185,7 @@ export interface OrdersApiResponse {
   syncMode?: "cache" | "incremental" | "full";
   storeErrors?: Array<{ storeId: string; storeName: string; error: string }>;
   partialData?: boolean;
+  storeBreakdown?: StoreAnalyticsBreakdown[];
   error?: string;
 }
 
