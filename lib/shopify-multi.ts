@@ -97,7 +97,7 @@ export function loadStores(): ShopifyStoreConfig[] {
         normalizeStore(
           {
             id: "store-1",
-            name: process.env.SHOPIFY_STORE_NAME || defaultStoreName(cleanDomain(firstDomain), 0),
+            name: process.env.SHOPIFY_STORE_NAME || "Bharat Basket",
             domain: firstDomain,
             clientId: process.env.SHOPIFY_CLIENT_ID,
             clientSecret: process.env.SHOPIFY_CLIENT_SECRET,
@@ -114,8 +114,7 @@ export function loadStores(): ShopifyStoreConfig[] {
         normalizeStore(
           {
             id: "store-2",
-            name:
-              process.env.SHOPIFY_STORE_NAME_2 || defaultStoreName(cleanDomain(secondDomain), 1),
+            name: process.env.SHOPIFY_STORE_NAME_2 || "Reviewmoat",
             domain: secondDomain,
             clientId: process.env.SHOPIFY_CLIENT_ID_2,
             clientSecret: process.env.SHOPIFY_CLIENT_SECRET_2,
